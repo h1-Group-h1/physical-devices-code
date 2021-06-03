@@ -1,85 +1,106 @@
-//libraries
 #include <SPI.h>
 #include <Ethernet.h>
 #include <PubSubClient.h>
-#include <Arduino_JSON.h>
+#include <ArduinoJson.h>
 
-//Arduino related variables
-const int openDelay = 1000; //time it takes to fully extend actuator
-const int closeDelay = 1000;//time it takes to fully retract actuator
-const int openRelay = 13;
-const int closeRelay = 11;
+//Arduino variables
+const int openDelay = 10000; //time it takes to fully extend actuator
+const int closeDelay = 10000;//time it takes to fully retract actuator
+const int openRelay = 9;
+const int closeRelay = 8;
 const int openButton = 7;
-const int closeButton = 5;
+const int closeButton = 6;
 
-//Intitialising stuff needed to connect and recieve data from MQTT server
-  //MAC & IP (change to correct values)
-  byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-  IPAddress ip(94, 2, 158, 86); //will be ignored if ISP provides one
-  
-  //identify MQTT server
-  const char* server = "broker.emqx.io"; //add tcp:// if it bricks
-  
-  /* creates an ethernet object which is then taken by the MQTT broker so we dont have to
-  deal with the ethernet shield when coding */
-  EthernetClient ethClient;
-  PubSubClient mqttClient(ethClient);
-  
-  //declare variable for decoded JSON data
-  char* type;
-  int* val;
-  
-  
-  
-//Receives and decodes JSON data from MQTT broker
-void subscribeReceive(char* topic, byte* payload, unsigned int length) {
+//MAC and IP address
+byte mac[]= {  0xAA, 0xBB, 0xCC, 0x00, 0xAB, 0xCD};
+IPAddress ip(192, 168, 0, 77);
+
+//server URL
+const char* server = "broker.hivemq.com";
+
+//creates ethernet client handled by PubSub
+EthernetClient ethClient;
+PubSubClient mqttClient(ethClient);
+
+//receive data and decode and parse JSON data
+void callback(char* topic, byte* payload, unsigned int length) {
+
   char str[length+1];
-  Serial.print("Message arrived [%s]", topic);
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
   
-  //int i = 0;
-  for (int i=0;i<length;i++) {
+  int i=0;
+  for (i=0;i<length;i++) {
     Serial.print((char)payload[i]);
     str[i]=(char)payload[i];
   }
-  str[i] = 0; //Null termination
+  str[i] = 0; // Null termination
   
-  StaticJsonDocument<256> doc; //change the 256 to a higher value if it doesnt work
-  deserializeJson(doc, str); //try payload instead of str if crashes
+  StaticJsonDocument<256> doc;
+  deserializeJson(doc,payload);
+  //deserializeJson(doc,str); can use str instead of payload if it doesnt work
   
   //reads data and writes into variables which can be used
-  type = doc["type"];
-  val = doc["val"];
+  String type = doc["type"];
+  int val = doc["val"];
   
-  //check the values
-  Serial.println("type = %s", type);
-  Serial.println("val = %d", val);
+  Serial.println("type =");
+  Serial.println(type);
+  Serial.print(val);
+  
+  
+  //Check if operating command
+  if(type == "op"){
+    
+    //extend actuator if val is 100 & publish
+    if(val == 100){
+      digitalWrite(openRelay, HIGH);
+      delay(openDelay);
+      digitalWrite(openRelay, LOW);
+      Serial.print("Actuator Opened");
+      boolean rc = mqttClient.publish("status/devices/1234", "100");
+    }
+    
+    //retract actuator if val is 0 & publish
+    else if(val == 0){
+      digitalWrite(closeRelay, HIGH);
+      delay(closeDelay);
+      digitalWrite(closeRelay, LOW);
+      Serial.print("Actuator Closed");
+      boolean rc = mqttClient.publish("status/devices/1234", "0");
+    }
+  }
 }
-
-//function to publish to MQTT server
-void publishVal(int newVal){boolean rc = mqttClient.publish("status/1234", newVal);}
-
 
 void setup()
 {
   Serial.begin(9600);
   
-  //Begin Ethernet & give time to boot
+  Serial.println("connecting");
   Ethernet.begin(mac, ip);
-  delay(1500);                          
- 
-  //Set the MQTT server
-  mqttClient.setServer(server, 1883);   
- 
-  //Try and connect
-  if (mqttClient.connect("arduino-1")) {
-    Serial.println("Connected");
- 
-    // Establish the subscribe event
-    mqttClient.setCallback(subscribeReceive);
-  } 
-  else {Serial.println("Failed to connect");}
+  delay(10000); // Allow the hardware to sort itself out
+  Serial.println(Ethernet.localIP());
   
-  //pinModes
+  mqttClient.setServer(server, 1883);
+  mqttClient.setCallback(callback);
+
+
+
+  if (mqttClient.connect("arduino-1234")) {
+    // connection succeeded
+    Serial.println("Connected ");
+    boolean r= mqttClient.subscribe("devices/1234");
+    Serial.println("subscribed");
+    Serial.println(r);
+  } 
+  else {
+    Serial.println("Connection failed ");
+    Serial.println(mqttClient.state());
+    
+  }
+  
+  //Pin Modes
   pinMode(openRelay, OUTPUT);
   pinMode(closeRelay, OUTPUT);
   pinMode(openButton, INPUT);
@@ -88,46 +109,37 @@ void setup()
 
 void loop(){
   //read values from buttons
-  int openButtonVal = digitalRead(openButton);
-  int closeButtonVal = digitalRead(closeButton);
-  
-  //check server for messages on subscribed topic
-  mqttClient.subscribe("devices/1234");
-  mqttClient.loop();
-  
-  //Check if operator command
-  if(type == "op"){
-    
-    //extend actuator if val is 100 & publish
-    if(val == 100){
-      digitalWrite(openRelay, HIGH);
-      delay(openDelay);
-      digitalWrite(openRelay, LOW);
-      publishVal(100);
-    }
-    
-    //retract actuator if val is 0 & publish
-    else-if(val = 0){
-      digitalWrite(closeRelay, HIGH);
-      delay(closeDelay);
-      digitalWrite(closeRelay, LOW);
-      publishVal(0);
-    }
-  }
+  boolean openButtonVal = digitalRead(openButton);
+  boolean closeButtonVal = digitalRead(closeButton);
+  boolean closeRelayVal = digitalRead(closeRelay);
+  boolean openRelayVal = digitalRead(openRelay);
   
   //button overrides
   if(openButtonVal == HIGH){
       digitalWrite(openRelay, HIGH);
       delay(openDelay);
       digitalWrite(openRelay, LOW);
-      publishVal(100);
+      boolean rc = mqttClient.publish("status/devices/1234", "100");
     }
     
-    if(closeButtonVal == HIGH){
-      digitalWrite(closeRelay, HIGH);
-      delay(closeDelay);
-      digitalWrite(closeRelay, LOW);
-      publishVal(0);
-    }
+  if(closeButtonVal == HIGH){
+    digitalWrite(closeRelay, HIGH);
+    delay(closeDelay);
+    digitalWrite(closeRelay, LOW);
+    boolean rc = mqttClient.publish("status/devices/1234", "0");
+  }
+  
+  //check server for messages on subscribed topic
+  mqttClient.subscribe("devices/1234");
+  mqttClient.loop();
+  
+  digitalWrite(closeRelay, 0);
+  Serial.print('c');
+  Serial.print(digitalRead(closeRelay));
+  Serial.print(digitalRead(closeButton));
+  Serial.print('o');
+  Serial.print(digitalRead(openRelay));
+  Serial.println(digitalRead(openButton));
+  
+  delay(1000); //does not override the system
 }
-
