@@ -4,10 +4,12 @@
 #include <ArduinoJson.h>
 
 //Arduino variables
-const int openDelay = 10000; //time it takes to fully extend actuator
-const int closeDelay = 10000;//time it takes to fully retract actuator
-const int openRelay = 9;
-const int closeRelay = 8;
+const int openDelay = 4000; //time it takes to fully extend actuator
+const int closeDelay = 4000;//time it takes to fully retract actuator
+const int openRelay = 5;
+const int openLed = 9;
+const int closeRelay = 4;
+const int closeLed = 8;
 const int openButton = 7;
 const int closeButton = 6;
 boolean windowOpen = false;
@@ -58,8 +60,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
     if(val == 100){
       if (!windowOpen){
         digitalWrite(openRelay, HIGH);
+        digitalWrite(openLed, HIGH);
         delay(openDelay);
         digitalWrite(openRelay, LOW);
+        digitalWrite(openLed, LOW);
         Serial.print("Actuator Opened");
         windowOpen = true;
       }
@@ -70,8 +74,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
     else if(val == 0){
       if(windowOpen){
         digitalWrite(closeRelay, HIGH);
+        digitalWrite(closeLed, HIGH);
         delay(closeDelay);
         digitalWrite(closeRelay, LOW);
+        digitalWrite(closeLed, LOW);
         Serial.print("Actuator Closed");
         windowOpen = false;
       }
@@ -128,21 +134,25 @@ void loop(){
   if(openButtonVal == HIGH){
     if(!windowOpen){
         digitalWrite(openRelay, HIGH);
+        digitalWrite(openLed, HIGH);
         delay(openDelay);
         digitalWrite(openRelay, LOW);
+        digitalWrite(openLed, LOW);
+        boolean rc = mqttClient.publish("status/devices/1234", "100");
         windowOpen = true;
     }
-      boolean rc = mqttClient.publish("status/devices/1234", "100");
-    }
+  }
     
   if(closeButtonVal == HIGH){
     if(windowOpen){
       digitalWrite(closeRelay, HIGH);
+      digitalWrite(closeLed, HIGH);
       delay(closeDelay);
       digitalWrite(closeRelay, LOW);
+      digitalWrite(closeLed, LOW);
+      boolean rc = mqttClient.publish("status/devices/1234", "0");
       windowOpen = false;
     }
-    boolean rc = mqttClient.publish("status/devices/1234", "0");
   }
   
   //check server for messages on subscribed topic
@@ -156,6 +166,7 @@ void loop(){
   Serial.print('o');
   Serial.print(digitalRead(openRelay));
   Serial.println(digitalRead(openButton));
+  Serial.println(windowOpen);
   
   delay(1000); //does not override the system
 }
