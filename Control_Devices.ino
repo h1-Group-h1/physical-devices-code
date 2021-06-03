@@ -10,13 +10,14 @@ const int openRelay = 9;
 const int closeRelay = 8;
 const int openButton = 7;
 const int closeButton = 6;
+boolean windowOpen = false;
 
 //MAC and IP address
 byte mac[]= {  0xAA, 0xBB, 0xCC, 0x00, 0xAB, 0xCD};
-IPAddress ip(192, 168, 0, 77);
+IPAddress ip(192, 168, 1, 33);
 
 //server URL
-const char* server = "broker.hivemq.com";
+const char* server = "test.mosquitto.org";
 
 //creates ethernet client handled by PubSub
 EthernetClient ethClient;
@@ -55,19 +56,25 @@ void callback(char* topic, byte* payload, unsigned int length) {
     
     //extend actuator if val is 100 & publish
     if(val == 100){
-      digitalWrite(openRelay, HIGH);
-      delay(openDelay);
-      digitalWrite(openRelay, LOW);
-      Serial.print("Actuator Opened");
+      if (!windowOpen){
+        digitalWrite(openRelay, HIGH);
+        delay(openDelay);
+        digitalWrite(openRelay, LOW);
+        Serial.print("Actuator Opened");
+        windowOpen = true;
+      }
       boolean rc = mqttClient.publish("status/devices/1234", "100");
     }
     
     //retract actuator if val is 0 & publish
     else if(val == 0){
-      digitalWrite(closeRelay, HIGH);
-      delay(closeDelay);
-      digitalWrite(closeRelay, LOW);
-      Serial.print("Actuator Closed");
+      if(windowOpen){
+        digitalWrite(closeRelay, HIGH);
+        delay(closeDelay);
+        digitalWrite(closeRelay, LOW);
+        Serial.print("Actuator Closed");
+        windowOpen = false;
+      }
       boolean rc = mqttClient.publish("status/devices/1234", "0");
     }
   }
@@ -78,7 +85,9 @@ void setup()
   Serial.begin(9600);
   
   Serial.println("connecting");
-  Ethernet.begin(mac, ip);
+  if(Ethernet.begin(mac) == 0){
+    Ethernet.begin(mac, ip);
+  }
   delay(10000); // Allow the hardware to sort itself out
   Serial.println(Ethernet.localIP());
   
@@ -86,7 +95,7 @@ void setup()
   mqttClient.setCallback(callback);
 
 
-
+  while(!mqttClient.connected()){
   if (mqttClient.connect("arduino-1234")) {
     // connection succeeded
     Serial.println("Connected ");
@@ -98,6 +107,7 @@ void setup()
     Serial.println("Connection failed ");
     Serial.println(mqttClient.state());
     
+  }
   }
   
   //Pin Modes
@@ -116,16 +126,22 @@ void loop(){
   
   //button overrides
   if(openButtonVal == HIGH){
-      digitalWrite(openRelay, HIGH);
-      delay(openDelay);
-      digitalWrite(openRelay, LOW);
+    if(!windowOpen){
+        digitalWrite(openRelay, HIGH);
+        delay(openDelay);
+        digitalWrite(openRelay, LOW);
+        windowOpen = true;
+    }
       boolean rc = mqttClient.publish("status/devices/1234", "100");
     }
     
   if(closeButtonVal == HIGH){
-    digitalWrite(closeRelay, HIGH);
-    delay(closeDelay);
-    digitalWrite(closeRelay, LOW);
+    if(windowOpen){
+      digitalWrite(closeRelay, HIGH);
+      delay(closeDelay);
+      digitalWrite(closeRelay, LOW);
+      windowOpen = false;
+    }
     boolean rc = mqttClient.publish("status/devices/1234", "0");
   }
   
