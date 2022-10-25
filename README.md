@@ -1,2 +1,1 @@
-# physical-devices-code
-Code for the physical devices
+Code for the Arduino which is used to interface with the window actuator.
